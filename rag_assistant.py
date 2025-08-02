@@ -33,8 +33,18 @@ from config import (
 import json
 import time
 import hashlib
+import logging
 
 from services.postgres_citation_service import postgres_citation_service
+
+logger = logging.getLogger(__name__)
+
+
+def truncate(text: str, max_length: int) -> str:
+    """Return text truncated to ``max_length`` characters with ellipsis."""
+    if len(text) <= max_length:
+        return text
+    return text[:max_length] + "..."
 
 # --------- Advanced RAG Logic borrowed & adapted from rag_assistant_v2.py --------- #
 
@@ -251,10 +261,14 @@ class EnhancedSimpleRedisRAGAssistant:
                 input=text.strip(),
             )
             embedding = resp.data[0].embedding
-            print(f"EMBEDDING DEBUG: type={type(embedding)}, len={len(embedding)}")
-            print(f"EMBEDDING DEBUG: resp.data has {len(resp.data)} item(s)")
+            logger.debug(
+                "EMBEDDING DEBUG: type=%s, len=%s", type(embedding), len(embedding)
+            )
+            logger.debug(
+                "EMBEDDING DEBUG: resp.data has %s item(s)", len(resp.data)
+            )
             if len(resp.data) != 1:
-                print(
+                logger.debug(
                     "EMBEDDING DEBUG WARNING: resp.data contains multiple embeddings! This may cause dimensionality errors."
                 )
             return embedding
@@ -394,15 +408,13 @@ class EnhancedSimpleRedisRAGAssistant:
             self.session_id, last_n_turns=self.max_history
         )
 
-        print(f"[DEBUG] User query: {user_query}")
+        logger.debug("User query: %s", user_query)
 
         # 2. Search the KB
         kb_chunks = self._search_kb(user_query)
-        print(f"[DEBUG] KB Chunks Retrieved: {len(kb_chunks)}")
+        logger.debug("KB chunks retrieved: %s", len(kb_chunks))
         for idx, chunk in enumerate(kb_chunks, 1):
-            print(
-                f"[DEBUG] KB Chunk {idx}: title={chunk.get('title')}, parent_id={chunk.get('parent_id')}, content_snippet={chunk.get('chunk','')[:80]}"
-            )
+            logger.debug("KB chunk %d title=%s", idx, chunk.get("title"))
 
         # 3. Compile the context string (history + KB in advanced format)
         history_section = self._compile_history_context(history)
@@ -414,6 +426,12 @@ class EnhancedSimpleRedisRAGAssistant:
         if kb_section:
             context += f"### New Search Results:\n{kb_section}\n\n"
 
+        logger.debug(
+            "Context length: %s, preview: %s",
+            len(context),
+            truncate(context, 200),
+        )
+
         # 4. Send to LLM (OpenAIService)
         messages = [
             {"role": "system", "content": sys_prompt},
@@ -422,7 +440,11 @@ class EnhancedSimpleRedisRAGAssistant:
         answer = self.openai_svc.get_chat_response(
             messages=messages, max_completion_tokens=900
         )
-        print(f"[DEBUG] LLM Answer: {answer[:500]}")
+        logger.debug(
+            "LLM answer length: %s, preview: %s",
+            len(answer),
+            truncate(answer, 200),
+        )
 
         # -- Citation assembly: Each kb_chunk corresponds to a [n] marker --
         citations = []
@@ -438,24 +460,31 @@ class EnhancedSimpleRedisRAGAssistant:
                     "id": f"source_{idx}",
                 }
             )
-        print(f"[DEBUG] Citations Assembled: {len(citations)}")
-        for c in citations:
-            print(f"[DEBUG] Citation: {c}")
+        logger.debug("Citations assembled: %s", len(citations))
 
         # --- Clean and filter citations based on answer content ---
         cleaned_answer = self._clean_citations(answer)
         filtered_answer, filtered_citations = self._filter_citations(
             cleaned_answer, citations
         )
-        print(
-            f"[DEBUG] Answer after filtering citations: {filtered_answer[:500]}"
+        logger.debug(
+            "Answer after filtering citations: %s",
+            truncate(filtered_answer, 200),
         )
+
+        logger.debug("Citation count: %s", len(filtered_citations))
+        for c in filtered_citations:
+            logger.debug(
+                "Citation %s snippet: %s",
+                c.get("display_id"),
+                truncate(c.get("content", ""), 100),
+            )
 
         # -- Register only the filtered sources with PostgreSQL citation service --
         registered_sources = postgres_citation_service.register_sources(
             self.session_id, filtered_citations
         )
-        print(f"[DEBUG] Registered Sources: {registered_sources}")
+        logger.debug("Registered sources: %s", registered_sources)
 
         # Ensure returned sources have sequential display IDs matching the answer
         for i, source in enumerate(registered_sources, 1):
