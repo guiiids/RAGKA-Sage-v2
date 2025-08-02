@@ -288,17 +288,13 @@ class DynamicContainer {
     
     // Remove any existing highlights
     this.removeAllHighlights();
-    
-    // Try to get message-specific sources first, then fall back to global lastSources
+
+    // Try to get message-specific sources
     let sourcesToUse = null;
-    
-    // Check if we have message-specific sources
+
     if (messageId && window.messageSourcesMap && window.messageSourcesMap[messageId]) {
       sourcesToUse = window.messageSourcesMap[messageId];
       console.log(`Using message-specific sources for message ${messageId}:`, sourcesToUse);
-    } else if (window.lastSources && Array.isArray(window.lastSources)) {
-      sourcesToUse = window.lastSources;
-      console.log('Using global lastSources:', sourcesToUse);
     }
     
     if (sourcesToUse && Array.isArray(sourcesToUse)) {
@@ -413,7 +409,7 @@ class DynamicContainer {
         if (window.debugLogger) {
           window.debugLogger.log('Source not found for citation', 'error', {
             sourceId: sourceId,
-            availableSources: window.lastSources.length
+            availableSources: sourcesToUse ? sourcesToUse.length : 0
           });
         }
         

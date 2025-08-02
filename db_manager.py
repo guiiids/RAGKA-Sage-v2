@@ -15,7 +15,7 @@ from config import (
     POSTGRES_SSL_MODE
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class DatabaseManager:
     """Handles database connections and operations for the feedback system."""

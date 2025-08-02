@@ -21,9 +21,9 @@ def log_openai_call(request: dict, response) -> None:
     with _log_lock, open(path, 'a') as f:
         f.write(json.dumps(record) + "\\n")
 
-def log_openai_usage(request: dict, response) -> None:
+def log_openai_usage(request: dict, response, latency: float) -> None:
     """
-    Append user query, response text, and usage info as a JSON object
+    Append user query, response text, usage info, and latency as a JSON object
     (one per line) into logs/openai_usage.jsonl.
     """
     os.makedirs('logs', exist_ok=True)
@@ -51,7 +51,8 @@ def log_openai_usage(request: dict, response) -> None:
         "timestamp": time.time(),
         "user_query": user_query,
         "response_text": response_text,
-        "usage": usage
+        "usage": usage,
+        "latency": latency,
     }
     path = os.path.join('logs', 'openai_usage.jsonl')
     with _log_lock, open(path, 'a') as f:

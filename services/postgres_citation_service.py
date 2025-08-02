@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from db_manager import DatabaseManager
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class PostgresCitationService:
     """

@@ -11,7 +11,7 @@ from openai import AzureOpenAI
 from db_manager import DatabaseManager
 from config import get_cost_rates
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 # LLM System Messages
 PROMPT_ENHANCER_SYSTEM_MESSAGE = QUERY_ENHANCER_SYSTEM_PROMPT = """
