@@ -6,6 +6,7 @@ import time
 from openai import AzureOpenAI
 from openai_logger import log_openai_call
 from openai_logger import log_openai_usage
+import metrics
 
 
 
@@ -97,6 +98,14 @@ class OpenAIService:
                 response.usage.prompt_tokens,
                 response.usage.completion_tokens,
                 response.usage.total_tokens,
+            )
+
+            # Record metrics for latency and token usage
+            metrics.record_latency(self.azure_endpoint, latency)
+            metrics.record_tokens(
+                self.deployment_name,
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
             )
 
             # Log the API call

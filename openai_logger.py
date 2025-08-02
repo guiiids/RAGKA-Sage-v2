@@ -2,6 +2,7 @@ import json
 import time
 import os
 from threading import Lock
+import metrics
 
 _log_lock = Lock()
 
@@ -57,3 +58,13 @@ def log_openai_usage(request: dict, response, latency: float) -> None:
     path = os.path.join('logs', 'openai_usage.jsonl')
     with _log_lock, open(path, 'a') as f:
         f.write(json.dumps(record) + "\\n")
+
+    # Record metrics for latency and token usage
+    usage_tokens = usage or {}
+    metrics.record_latency('openai_usage', latency)
+    if usage_tokens:
+        metrics.record_tokens(
+            response_dict.get('model', ''),
+            usage_tokens.get('prompt_tokens', 0),
+            usage_tokens.get('completion_tokens', 0),
+        )
