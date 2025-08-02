@@ -156,9 +156,11 @@ class PostgresCitationService:
                             citation_id = existing[0]
                             logger.debug(f"Reusing citation ID {citation_id} for existing source")
                         else:
-                            logger.debug(f"Inserting new citation ID {citation_id} for source with title: {source.get('title', '')}")
                             # New source, assign new citation ID
                             citation_id = self._get_next_citation_id(session_id)
+                            logger.debug(
+                                f"Inserting new citation ID {citation_id} for source with title: {source.get('title', '')}"
+                            )
                             
                             # Store the full source data
                             cur.execute(
