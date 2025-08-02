@@ -337,6 +337,40 @@ class EnhancedSimpleRedisRAGAssistant:
 
         return result
 
+    def _filter_citations(self, answer: str, citations: List[Dict]) -> Tuple[str, List[Dict]]:
+        """Return answer and sources filtered to those cited in the answer."""
+        if not citations:
+            return answer, []
+
+        pattern = re.compile(r"\[(\d+)\]")
+        seen: List[int] = []
+        for m in pattern.findall(answer):
+            try:
+                idx = int(m)
+            except ValueError:
+                continue
+            if 1 <= idx <= len(citations) and idx not in seen:
+                seen.append(idx)
+
+        if not seen:
+            return answer, []
+
+        mapping = {old: new for new, old in enumerate(seen, 1)}
+
+        def repl(match: re.Match) -> str:
+            old = int(match.group(1))
+            return f"[{mapping.get(old, '')}]" if old in mapping else ""
+
+        filtered_answer = pattern.sub(repl, answer)
+        filtered_sources: List[Dict] = []
+        for old in seen:
+            src = citations[old - 1].copy()
+            new_idx = mapping[old]
+            src.update({"index": new_idx, "display_id": str(new_idx)})
+            filtered_sources.append(src)
+
+        return filtered_answer, filtered_sources
+
     def _rebuild_citation_map(self, cited_sources):
         """
         Maintain a cumulative map of all sources ever shown/cited in this session,
@@ -408,29 +442,33 @@ class EnhancedSimpleRedisRAGAssistant:
         for c in citations:
             print(f"[DEBUG] Citation: {c}")
 
-        # -- Register sources with PostgreSQL citation service --
+        # --- Clean and filter citations based on answer content ---
+        cleaned_answer = self._clean_citations(answer)
+        filtered_answer, filtered_citations = self._filter_citations(
+            cleaned_answer, citations
+        )
+        print(
+            f"[DEBUG] Answer after filtering citations: {filtered_answer[:500]}"
+        )
+
+        # -- Register only the filtered sources with PostgreSQL citation service --
         registered_sources = postgres_citation_service.register_sources(
-            self.session_id, citations
+            self.session_id, filtered_citations
         )
         print(f"[DEBUG] Registered Sources: {registered_sources}")
 
-        # Use the registered sources with their assigned citation IDs
-        for i, source in enumerate(registered_sources):
-            if "citation_id" in source:
-                citations[i]["citation_id"] = source["citation_id"]
-                citations[i]["display_id"] = str(source["citation_id"])
-
-        # --- Clean citations for frontend processing ---
-        cleaned_answer = self._clean_citations(answer)
-        print(f"[DEBUG] Answer with cleaned citations: {cleaned_answer[:500]}")
+        # Ensure returned sources have sequential display IDs matching the answer
+        for i, source in enumerate(registered_sources, 1):
+            source["index"] = i
+            source["display_id"] = str(i)
 
         # Store the turn in Redis
-        summary_text = f"User: {user_query}\nAssistant: {cleaned_answer}"
+        summary_text = f"User: {user_query}\nAssistant: {filtered_answer}"
         summary = self.openai_svc.summarize_text(summary_text)
-        self.memory.store_turn(self.session_id, user_query, cleaned_answer, summary)
+        self.memory.store_turn(self.session_id, user_query, filtered_answer, summary)
 
-        # Return the cleaned answer and the registered sources
-        return cleaned_answer, registered_sources
+        # Return the filtered answer and the registered sources
+        return filtered_answer, registered_sources
 
     def stream_rag_response(self, user_query: str):
         """
@@ -461,7 +499,7 @@ class EnhancedSimpleRedisRAGAssistant:
             {"role": "user", "content": context + f"\n\nUser question: {user_query}"},
         ]
 
-        # 4a. Prepare citation metadata before streaming
+        # 4a. Prepare citation metadata
         citations = []
         for idx, chunk in enumerate(kb_chunks, 1):
             title = chunk.get("title") or f"Source {idx}"
@@ -476,41 +514,27 @@ class EnhancedSimpleRedisRAGAssistant:
                 }
             )
 
-        # Register sources with PostgreSQL citation service (once per streamed message)
-        registered_sources = postgres_citation_service.register_sources(
-            self.session_id, citations
-        )
-        # Use the registered sources with their assigned citation IDs
-        for i, source in enumerate(registered_sources):
-            if "citation_id" in source:
-                citations[i]["citation_id"] = source["citation_id"]
-                citations[i]["display_id"] = str(source["citation_id"])
-
-        # Emit metadata event FIRST so frontend can associate citation IDs
-        yield {"sources": registered_sources}
-
-        # Stream from OpenAIService and post-process citation links in-stream
-        # Use a stable message_id for the links (session + ms timestamp at stream start)
-        import time
-
-        message_id = f"{self.session_id}_{int(time.time() * 1000)}"
-
-        # We buffer up to each chunk then clean citations, yielding only the DELTA to not resend content
-        full_answer = ""
-        last_yielded = 0
-        for chunk in self.openai_svc.get_chat_response_stream(
+        # 4b. Get full answer from LLM
+        answer = self.openai_svc.get_chat_response(
             messages=messages, max_completion_tokens=900
-        ):
-            full_answer += chunk
-            # Always clean citations in full_answer-so-far for frontend processing
-            cleaned_answer = self._clean_citations(full_answer)
-            # Yield only the new stuff (i.e., skipping any previously yielded portion)
-            new_content = cleaned_answer[last_yielded:]
-            if new_content:
-                yield new_content
-                last_yielded = len(cleaned_answer)
-        # 5. Store the cleaned answer using session memory backend
-        final_answer = self._clean_citations(full_answer)
+        )
+
+        cleaned_answer = self._clean_citations(answer)
+        final_answer, filtered_citations = self._filter_citations(
+            cleaned_answer, citations
+        )
+
+        registered_sources = postgres_citation_service.register_sources(
+            self.session_id, filtered_citations
+        )
+        for i, source in enumerate(registered_sources, 1):
+            source["index"] = i
+            source["display_id"] = str(i)
+
+        # Emit sources then answer
+        yield {"sources": registered_sources}
+        yield final_answer
+
         summary = self.openai_svc.summarize_text(
             f"User: {user_query}\nAssistant: {final_answer}"
         )
