@@ -99,8 +99,8 @@ class OpenAIService:
                 response.usage.total_tokens,
             )
 
-            # Log the API call
-            log_openai_call(request, response)
+            # Log the API call and usage metrics
+            log_openai_call(request, response, latency)
             log_openai_usage(request, response, latency)
             
             # Extract and return the response text

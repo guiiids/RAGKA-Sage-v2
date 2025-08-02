@@ -2,58 +2,82 @@ import json
 import time
 import os
 from threading import Lock
+from typing import Optional
 
 _log_lock = Lock()
 
-def log_openai_call(request: dict, response) -> None:
-    """
-    Append each OpenAI request and response as a JSON object
-    (one per line) into logs/openai_calls.jsonl.
-    """
-    os.makedirs('logs', exist_ok=True)
-    record = {
-        "timestamp": time.time(),
-        "request": request,
-        # response may be an OpenAI response object with to_dict()
-        "response": response.to_dict() if hasattr(response, "to_dict") else dict(response)
-    }
-    path = os.path.join('logs', 'openai_calls.jsonl')
-    with _log_lock, open(path, 'a') as f:
-        f.write(json.dumps(record) + "\\n")
 
-def log_openai_usage(request: dict, response, latency: float) -> None:
-    """
-    Append user query, response text, usage info, and latency as a JSON object
-    (one per line) into logs/openai_usage.jsonl.
-    """
-    os.makedirs('logs', exist_ok=True)
+def truncate_text(text: Optional[str], max_chars: int = 200) -> Optional[str]:
+    """Return ``text`` truncated to ``max_chars`` characters."""
+    if text is None:
+        return None
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "..."
 
-    # Extract user query from request messages (last user message content)
-    user_query = None
+
+def _extract_user_message(request: dict) -> Optional[str]:
     messages = request.get("messages", [])
     for msg in reversed(messages):
         if msg.get("role") == "user" and "content" in msg:
-            user_query = msg["content"]
-            break
+            return msg["content"]
+    return None
 
-    # Extract response text from response object
-    response_dict = response.to_dict() if hasattr(response, "to_dict") else dict(response)
-    response_text = None
+
+def _extract_assistant_message(response_dict: dict) -> Optional[str]:
     try:
-        response_text = response_dict["choices"][0]["message"]["content"]
+        return response_dict["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
-        response_text = None
+        return None
 
-    # Extract usage info if available
-    usage = response_dict.get("usage")
+
+def log_openai_call(
+    request: dict,
+    response,
+    latency: float = 0.0,
+    include_full_payload: bool = False,
+) -> None:
+    """Log an OpenAI request/response pair to ``logs/openai_calls.jsonl``."""
+    os.makedirs("logs", exist_ok=True)
+
+    response_dict = response.to_dict() if hasattr(response, "to_dict") else dict(response)
+    user_msg = _extract_user_message(request)
+    assistant_msg = _extract_assistant_message(response_dict)
 
     record = {
         "timestamp": time.time(),
-        "user_query": user_query,
-        "response_text": response_text,
-        "usage": usage,
+        "user_message": truncate_text(user_msg),
+        "assistant_message": truncate_text(assistant_msg),
+        "usage": response_dict.get("usage"),
         "latency": latency,
     }
-    path = os.path.join('logs', 'openai_usage.jsonl')
-    with _log_lock, open(path, 'a') as f:
-        f.write(json.dumps(record) + "\\n")
+
+    if include_full_payload:
+        record["request"] = request
+        record["response"] = response_dict
+
+    path = os.path.join("logs", "openai_calls.jsonl")
+    with _log_lock, open(path, "a") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+def log_openai_usage(request: dict, response, latency: float) -> None:
+    """Log usage information to ``logs/openai_usage.jsonl``."""
+    os.makedirs("logs", exist_ok=True)
+
+    response_dict = response.to_dict() if hasattr(response, "to_dict") else dict(response)
+    user_query = _extract_user_message(request)
+    response_text = _extract_assistant_message(response_dict)
+
+    record = {
+        "timestamp": time.time(),
+        "user_query": truncate_text(user_query),
+        "response_text": truncate_text(response_text),
+        "usage": response_dict.get("usage"),
+        "latency": latency,
+    }
+
+    path = os.path.join("logs", "openai_usage.jsonl")
+    with _log_lock, open(path, "a") as f:
+        f.write(json.dumps(record) + "\n")
+
