@@ -2,13 +2,15 @@
 OpenAIService class for handling interactions with the Azure OpenAI API
 """
 import logging
+import time
 from openai import AzureOpenAI
 from openai_logger import log_openai_call
 from openai_logger import log_openai_usage
+import metrics
 
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class OpenAIService:
     """
@@ -85,12 +87,30 @@ class OpenAIService:
                 logger.debug(f"First message - Role: {messages[0]['role']}")
                 logger.debug(f"Last message - Role: {messages[-1]['role']}")
             
-            # Send the request to the API
+            # Send the request to the API and record latency
+            start = time.perf_counter()
             response = self.client.chat.completions.create(**request)
-            
+            latency = time.perf_counter() - start
+
+            logger.info(
+                "OpenAI API latency: %.4fs, prompt_tokens: %s, completion_tokens: %s, total_tokens: %s",
+                latency,
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+                response.usage.total_tokens,
+            )
+
+            # Record metrics for latency and token usage
+            metrics.record_latency(self.azure_endpoint, latency)
+            metrics.record_tokens(
+                self.deployment_name,
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+            )
+
             # Log the API call
             log_openai_call(request, response)
-            log_openai_usage(request, response)
+            log_openai_usage(request, response, latency)
             
             # Extract and return the response text
             answer = response.choices[0].message.content

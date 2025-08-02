@@ -10,8 +10,9 @@ import logging
 from openai import AzureOpenAI
 from db_manager import DatabaseManager
 from config import get_cost_rates
+import metrics
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 # LLM System Messages
 PROMPT_ENHANCER_SYSTEM_MESSAGE = QUERY_ENHANCER_SYSTEM_PROMPT = """
@@ -112,12 +113,13 @@ def llm_helpee(input_text: str) -> str:
             { "role": "user",   "content": input_text }
         ]
     )
-    
+
     answer = response.choices[0].message.content
     usage = getattr(response, "usage", {})
     prompt_tokens = usage.prompt_tokens
     completion_tokens = usage.completion_tokens
     total_tokens = usage.total_tokens
+    metrics.record_tokens(os.getenv("AZURE_OPENAI_MODEL"), prompt_tokens, completion_tokens)
     
     logger.debug(f"User query: {input_text}")
     logger.debug(f"Enhanced query: {answer}")
@@ -195,6 +197,8 @@ def llm_helpee_2xl(input_text: str) -> str:
     prompt_tokens = usage.prompt_tokens
     completion_tokens = usage.completion_tokens
     total_tokens = usage.total_tokens
+    metrics.record_latency(os.getenv("AZURE_OPENAI_ENDPOINT"), latency)
+    metrics.record_tokens(os.getenv("AZURE_OPENAI_MODEL"), prompt_tokens, completion_tokens)
     
     # Log to database
     log_id = DatabaseManager.log_helpee_activity(
