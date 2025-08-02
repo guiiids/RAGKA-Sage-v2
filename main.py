@@ -36,6 +36,7 @@ from config import get_cost_rates
 from openai_service import OpenAIService
 from services.postgres_citation_service import postgres_citation_service
 from services.session_memory import PostgresSessionMemory
+import metrics
 
 setup_logging()
 setup_improvement_logging()
@@ -157,6 +158,7 @@ def llm_helpee(input_text: str) -> str:
     prompt_tokens = usage.prompt_tokens
     completion_tokens = usage.completion_tokens
     total_tokens = usage.total_tokens
+    metrics.record_tokens(os.getenv("AZURE_OPENAI_MODEL"), prompt_tokens, completion_tokens)
     logger.debug(f"User query: {input_text}")
     logger.debug(f"Enhanced query: {answer}")
     # Log to database
@@ -225,6 +227,8 @@ def llm_helpee_2xl(input_text: str) -> str:
     prompt_tokens = usage.prompt_tokens
     completion_tokens = usage.completion_tokens
     total_tokens = usage.total_tokens
+    metrics.record_latency(os.getenv("AZURE_OPENAI_ENDPOINT"), latency)
+    metrics.record_tokens(os.getenv("AZURE_OPENAI_MODEL"), prompt_tokens, completion_tokens)
     
     # Log to database
     log_id = DatabaseManager.log_helpee_activity(
