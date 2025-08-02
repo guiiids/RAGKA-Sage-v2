@@ -33,7 +33,7 @@ window.formatMessage = function formatMessage(text) {
     if (!source) return match; // don't break unknown ones
     // The anchor uses the message-scoped citationId for exact handler match
     const citationId = source.scopedId || (window.currentMessageId + '-' + p1);
-    return `<sup><a href="javascript:void(0);" onclick="handleMessageScopedCitationClick('${citationId}')" class="citation-link" data-citation-id="${citationId}">[${p1}]</a></sup>`;
+    return `<sup><a href="javascript:void(0);" onclick="handleMessageScopedCitationClick('${citationId}')" class="citation-link" data-citation-id="${citationId}" data-source-id="${citationId}" data-message-id="${window.currentMessageId}">[${p1}]</a></sup>`;
   });
   return replaced.replace(/\n/g, '<br>');
 };
@@ -253,7 +253,7 @@ function updateStreamingMessage(content) {
       const source = currentSources.find(src => String(src.display_id) === p1);
       if (!source) return match;
       const citationId = source.scopedId || `${window.currentMessageId}-${p1}`;
-      return `<sup><a href="javascript:void(0);" onclick="handleMessageScopedCitationClick('${citationId}')" class="citation-link" data-citation-id="${citationId}">[${p1}]</a></sup>`;
+      return `<sup><a href="javascript:void(0);" onclick="handleMessageScopedCitationClick('${citationId}')" class="citation-link" data-citation-id="${citationId}" data-source-id="${citationId}" data-message-id="${window.currentMessageId}">[${p1}]</a></sup>`;
     });
     contentDiv.innerHTML = html + '<span class="typing-cursor">|</span>';
     

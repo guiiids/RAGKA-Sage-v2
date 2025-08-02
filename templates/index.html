@@ -507,7 +507,7 @@
                   uniqueId = source.id;
                 }
               }
-              return `<sup class="text-2xl"><a href="#source-${uniqueId}" class="citation-link text-xs text-blue-600" data-source-id="${uniqueId}" data-message-id="${messageId}">${displayId}</a></sup>`;
+              return `<sup class="text-2xl"><a href="#source-${uniqueId}" class="citation-link text-xs text-blue-600" data-source-id="${uniqueId}" data-citation-id="${uniqueId}" data-message-id="${messageId}">${displayId}</a></sup>`;
             }
             
             // Check if it's an internal source ID [S_xxxxx]
@@ -521,7 +521,7 @@
                   displayId = window.lastSources[sourceIndex].display_id || (sourceIndex + 1).toString();
                 }
               }
-              return `<sup class="text-2xl"><a href="#source-${sourceId}" class="citation-link text-xs text-blue-600" data-source-id="${sourceId}" data-message-id="${messageId}">${displayId}</a></sup>`;
+              return `<sup class="text-2xl"><a href="#source-${sourceId}" class="citation-link text-xs text-blue-600" data-source-id="${sourceId}" data-citation-id="${sourceId}" data-message-id="${messageId}">${displayId}</a></sup>`;
             }
             
             // For any other format, return as-is
@@ -565,7 +565,7 @@
                 uniqueId = source.id;
               }
             }
-            return `<a href="#source-${uniqueId}" class="citation-link text-xs text-blue-600 hover:underline" data-source-id="${uniqueId}">[${displayId}]</a>`;
+            return `<a href="#source-${uniqueId}" class="citation-link text-xs text-blue-600 hover:underline" data-source-id="${uniqueId}" data-citation-id="${uniqueId}">[${displayId}]</a>`;
           }
         );
         return message;
@@ -841,9 +841,9 @@
 
           // Check for legacy/disabled state
           if (source.is_current_message === false) {
-            sourcesHtml += `<li><a href="#source-${uniqueId}" class="citation-link disabled-citation cursor-not-allowed" data-source-id="${uniqueId}" data-message-id="${messageId}" style="pointer-events:none;color:#aaa;opacity:0.5;text-decoration:none;" title="Citations from previous messages are disabled">${sourceTitle}</a></li>`;
+            sourcesHtml += `<li><a href="#source-${uniqueId}" class="citation-link disabled-citation cursor-not-allowed" data-source-id="${uniqueId}" data-citation-id="${uniqueId}" data-message-id="${messageId}" style="pointer-events:none;color:#aaa;opacity:0.5;text-decoration:none;" title="Citations from previous messages are disabled">${sourceTitle}</a></li>`;
           } else {
-            sourcesHtml += `<li><a href="#source-${uniqueId}" class="citation-link text-blue-600 hover:underline cursor-pointer" data-source-id="${uniqueId}" data-message-id="${messageId}">${sourceTitle}</a></li>`;
+            sourcesHtml += `<li><a href="#source-${uniqueId}" class="citation-link text-blue-600 hover:underline cursor-pointer" data-source-id="${uniqueId}" data-citation-id="${uniqueId}" data-message-id="${messageId}">${sourceTitle}</a></li>`;
           }
         });
         
@@ -867,7 +867,8 @@
             newCitationLinks.forEach(link => {
               link.addEventListener('click', function(e) {
                 e.preventDefault();
-                const sourceId = this.getAttribute('data-source-id');
+                const sourceId = this.getAttribute('data-source-id') || this.getAttribute('data-citation-id');
+                
 
                 // Trigger the same behavior as inline citations
                 if (window.handleCitationClick) {
@@ -992,9 +993,9 @@
       if (e.target.classList.contains('citation-link') || e.target.closest('.citation-link')) {
         e.preventDefault();
         const link = e.target.classList.contains('citation-link') ? e.target : e.target.closest('.citation-link');
-        const sourceId = link.getAttribute('data-source-id');
+        const sourceId = link.getAttribute('data-source-id') || link.getAttribute('data-citation-id');
         const messageId = link.getAttribute('data-message-id');
-        
+
         if (sourceId) {
           handleCitationClick(sourceId, messageId);
         }
