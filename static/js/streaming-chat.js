@@ -405,11 +405,22 @@ function getCurrentSettings() {
  * Enhanced citation click handler with PostgreSQL citation service support
  */
 function handleMessageScopedCitationClick(sourceId) {
+  // Guard against invalid source identifiers
+  if (!sourceId || typeof sourceId !== 'string') {
+    if (window.debugCitations) {
+      console.warn('❗ Invalid sourceId in handleMessageScopedCitationClick:', sourceId);
+    }
+    return;
+  }
+
+  // Normalize to primitive string before regex operations
+  sourceId = String(sourceId);
+
   if (window.debugCitations) {
     console.group(`🖱️ CITATION CLICK DEBUG`);
     console.log('📌 Clicked source ID:', sourceId);
   }
-  
+
   // Try to extract message ID and citation ID from scoped citation (e.g., "1-2" -> message 1, citation 2)
   const scopedMatch = sourceId.match(/^(\d+)-(\d+)$/);
   if (scopedMatch) {
