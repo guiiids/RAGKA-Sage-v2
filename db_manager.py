@@ -14,6 +14,7 @@ from config import (
     POSTGRES_PASSWORD,
     POSTGRES_SSL_MODE
 )
+from services.utils import truncate
 
 logger = logging.getLogger()
 
@@ -410,6 +411,9 @@ class DatabaseManager:
         try:
             # Prepare the data
             timestamp = datetime.now(timezone.utc)
+            query = truncate(query)
+            response = truncate(response)
+            context = truncate(context)
             
             # Create a structured record of the sources with all available metadata
             source_metadata = []

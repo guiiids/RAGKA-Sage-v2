@@ -16,6 +16,11 @@ from flask import Flask, request, jsonify, render_template, Response, send_from_
 import json
 import logging
 import os
+
+import time
+from logging.handlers import RotatingFileHandler
+from pythonjsonlogger import jsonlogger
+
 from dotenv import load_dotenv
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, render_template_string, Response, send_from_directory, session
@@ -36,7 +41,9 @@ from config import get_cost_rates
 from openai_service import OpenAIService
 from services.postgres_citation_service import postgres_citation_service
 from services.session_memory import PostgresSessionMemory
+from services.utils import truncate
 import metrics
+
 
 setup_logging()
 setup_improvement_logging()
@@ -307,11 +314,12 @@ def api_magic_query_2xl():
         
 @app.route("/api/query", methods=["POST"])
 def api_query():
+    start_time = time.perf_counter()
     data = request.get_json()
     logger.info("DEBUG - Incoming /api/query payload: %s", json.dumps(data))
     user_query = data.get("query", "")
     is_enhanced = data.get("is_enhanced", False)
-    logger.info(f"API query received: {user_query}")
+    logger.info(f"API query received: {truncate(user_query)}")
     
     # Get the session ID
     session_id = session.get('session_id')
@@ -344,8 +352,17 @@ def api_query():
         logger.info(f"DEBUG - Top P: {rag_assistant.top_p}")
         
         html_answer, citations = rag_assistant.generate_response(user_query)
-        logger.info(f"API query response generated for: {user_query}")
+        logger.info(f"API query response generated for: {truncate(user_query)}")
         logger.info(f"DEBUG - Response length: {len(html_answer)}")
+
+        latency = time.perf_counter() - start_time
+        logger.info(
+            "Query: %s | Response: %s | Citations: %d | Latency: %.2fs",
+            truncate(user_query),
+            truncate(html_answer),
+            len(citations),
+            latency,
+        )
 
         # Log with sources for traceability
         try:
@@ -378,6 +395,7 @@ def api_query():
 @app.route("/api/query/stream", methods=["POST"])
 def api_query_stream():
     """Stream RAG responses for better perceived latency"""
+    start_time = time.perf_counter()
     data = request.get_json()
     logger.debug(f"api_query_stream called with payload: {data}")
     user_query = data.get("query", "")
@@ -399,17 +417,29 @@ def api_query_stream():
                 setattr(rag_assistant, key, value)
     
     def generate():
+        response_text = ""
+        citations = []
         try:
             for chunk in rag_assistant.stream_rag_response(user_query):
                 if isinstance(chunk, str):
+                    response_text += chunk
                     # Text chunk
                     yield f"data: {json.dumps({'type': 'content', 'data': chunk})}\n\n"
                 elif isinstance(chunk, dict):
+                    citations = chunk.get("sources", [])
                     # Metadata (sources, evaluation, etc.)
                     yield f"data: {json.dumps({'type': 'metadata', 'data': chunk})}\n\n"
-            
+
+            latency = time.perf_counter() - start_time
+            logger.info(
+                "Query: %s | Response: %s | Citations: %d | Latency: %.2fs",
+                truncate(user_query),
+                truncate(response_text),
+                len(citations),
+                latency,
+            )
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
-            
+
         except Exception as e:
             logger.error(f"Streaming error: {e}")
             yield f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n"
