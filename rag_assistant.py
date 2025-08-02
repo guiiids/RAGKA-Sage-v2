@@ -230,17 +230,30 @@ class EnhancedSimpleRedisRAGAssistant:
         session_id: str,
         max_history: int = 5,
         memory: Optional[SessionMemory] = None,
+        deployment_name: str = CHAT_DEPLOYMENT,
+        temperature: float = 1.0,
+        max_completion_tokens: int = 900,
+        top_p: float = 1.0,
     ):
         self.session_id = session_id
         self.max_history = max_history
         self.memory = memory or PostgresSessionMemory(max_turns=max_history)
+
+        # model/response configuration
+        self.temperature = temperature
+        self.max_completion_tokens = max_completion_tokens
+        self.top_p = top_p
+
         # Using PostgreSQL citation service instead of Redis
         self.openai_svc = OpenAIService(
             azure_endpoint=OPENAI_ENDPOINT,
             api_key=OPENAI_KEY,
             api_version=OPENAI_API_VERSION,
-            deployment_name=CHAT_DEPLOYMENT,
+            deployment_name=deployment_name,
         )
+
+        # ensure openai_svc uses current deployment name
+        self.deployment_name = deployment_name
         from openai import AzureOpenAI
 
         self.embeddings_client = AzureOpenAI(
@@ -253,6 +266,16 @@ class EnhancedSimpleRedisRAGAssistant:
             index_name=SEARCH_INDEX,
             credential=AzureKeyCredential(SEARCH_KEY),
         )
+
+    @property
+    def deployment_name(self) -> str:
+        return getattr(self, "_deployment_name", CHAT_DEPLOYMENT)
+
+    @deployment_name.setter
+    def deployment_name(self, value: str) -> None:
+        self._deployment_name = value
+        if hasattr(self, "openai_svc"):
+            self.openai_svc.deployment_name = value
 
     def _make_embedding(self, text: str) -> Optional[List[float]]:
         try:
@@ -438,7 +461,8 @@ class EnhancedSimpleRedisRAGAssistant:
             {"role": "user", "content": context + f"\n\nUser question: {user_query}"},
         ]
         answer = self.openai_svc.get_chat_response(
-            messages=messages, max_completion_tokens=900
+            messages=messages,
+            max_completion_tokens=getattr(self, "max_completion_tokens", 900),
         )
         logger.debug(
             "LLM answer length: %s, preview: %s",
@@ -545,7 +569,8 @@ class EnhancedSimpleRedisRAGAssistant:
 
         # 4b. Get full answer from LLM
         answer = self.openai_svc.get_chat_response(
-            messages=messages, max_completion_tokens=900
+            messages=messages,
+            max_completion_tokens=getattr(self, "max_completion_tokens", 900),
         )
 
         cleaned_answer = self._clean_citations(answer)

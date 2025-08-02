@@ -36,6 +36,9 @@ sys.modules['azure.core.credentials'] = azure_core_stub
 from rag_assistant import EnhancedSimpleRedisRAGAssistant
 from services.postgres_citation_service import postgres_citation_service
 
+# Allow other tests to import the real module
+sys.modules.pop('services.postgres_citation_service', None)
+
 
 class DummyMemory:
     def __init__(self):

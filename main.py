@@ -346,10 +346,16 @@ def api_query():
             if "model" in settings:
                 rag_assistant.deployment_name = settings["model"]
         
-        logger.info(f"DEBUG - Using model: {rag_assistant.deployment_name}")
-        logger.info(f"DEBUG - Temperature: {rag_assistant.temperature}")
-        logger.info(f"DEBUG - Max tokens: {rag_assistant.max_completion_tokens}")
-        logger.info(f"DEBUG - Top P: {rag_assistant.top_p}")
+        if hasattr(rag_assistant, "deployment_name"):
+            logger.info(f"DEBUG - Using model: {rag_assistant.deployment_name}")
+        if hasattr(rag_assistant, "temperature"):
+            logger.info(f"DEBUG - Temperature: {rag_assistant.temperature}")
+        if hasattr(rag_assistant, "max_completion_tokens"):
+            logger.info(
+                f"DEBUG - Max tokens: {rag_assistant.max_completion_tokens}"
+            )
+        if hasattr(rag_assistant, "top_p"):
+            logger.info(f"DEBUG - Top P: {rag_assistant.top_p}")
         
         html_answer, citations = rag_assistant.generate_response(user_query)
         logger.info(f"API query response generated for: {truncate(user_query)}")
