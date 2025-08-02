@@ -11,7 +11,7 @@ import redis
 from typing import Any, Dict, Optional, List, Union
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class RedisService:
     def get_current_timestamp(self) -> int:

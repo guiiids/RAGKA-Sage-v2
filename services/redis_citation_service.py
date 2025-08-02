@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from services.redis_service import redis_service
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class RedisCitationService:
     """

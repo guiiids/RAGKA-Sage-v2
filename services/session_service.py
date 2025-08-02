@@ -8,7 +8,7 @@ maintaining separate conversation contexts for each user session.
 import logging
 from rag_assistant_v2 import FlaskRAGAssistant
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 # Dictionary to store RAG assistant instances by session ID
 rag_assistants = {}

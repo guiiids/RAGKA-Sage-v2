@@ -8,7 +8,7 @@ from openai_logger import log_openai_usage
 
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class OpenAIService:
     """

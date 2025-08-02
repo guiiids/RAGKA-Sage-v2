@@ -7,7 +7,7 @@ from typing import List, Tuple, Optional, Any, Dict
 
 from db_manager import DatabaseManager
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 
 class SessionMemory:

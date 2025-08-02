@@ -15,13 +15,12 @@ import traceback
 from flask import Flask, request, jsonify, render_template, Response, send_from_directory, session
 import json
 import logging
-import sys
 import os
-from logging.handlers import RotatingFileHandler
-from pythonjsonlogger import jsonlogger
 from dotenv import load_dotenv
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, render_template_string, Response, send_from_directory, session
+from logging_config import setup_logging
+from rag_improvement_logging import setup_improvement_logging
 
 load_dotenv()
 
@@ -35,50 +34,12 @@ from db_manager import DatabaseManager
 from openai import AzureOpenAI
 from config import get_cost_rates
 from openai_service import OpenAIService
-from rag_improvement_logging import setup_improvement_logging
 from services.postgres_citation_service import postgres_citation_service
 from services.session_memory import PostgresSessionMemory
 
-# Set up dedicated logging for the improved implementation
-logger = setup_improvement_logging()
-
-# Add a formatter that gives both UTC ISO and local log timestamp per log record
-import datetime
-
-class DualTimestampFormatter(logging.Formatter):
-    def __init__(self, fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", **kwargs):
-        super().__init__(fmt=fmt, datefmt=datefmt, **kwargs)
-
-    def format(self, record):
-        # Generate ISO8601 UTC with microseconds, always ending with 'Z'
-        utcnow = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-        iso_utc = utcnow.isoformat(timespec="microseconds").replace("+00:00", "Z")
-        # Format local timestamp (asctime), level, message
-        asctime = self.formatTime(record, self.datefmt)
-        # Include log level
-        levelname = record.levelname
-        msg = record.getMessage()
-        # Example format:
-        # 2025-08-01T09:10:28.3831213Z 2025-08-01 09:10:28,382 - INFO - Message...
-        return f"{iso_utc} {asctime} - {levelname} - {msg}"
-
-# Add file handler with absolute path for main application logs
-logs_dir = os.path.dirname(os.path.abspath('logs/main_alternate.log'))
-if not os.path.exists(logs_dir):
-    os.makedirs(logs_dir)
-
-file_handler = logging.FileHandler('logs/main_alternate.log')
-file_handler.setLevel(logging.DEBUG)
-dual_formatter = DualTimestampFormatter(datefmt='%Y-%m-%d %H:%M:%S')
-file_handler.setFormatter(dual_formatter)
-logger.addHandler(file_handler)
-
-# Stream logs to stdout for visibility
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setLevel(logging.INFO)
-stream_handler.setFormatter(dual_formatter)
-logger.addHandler(stream_handler)
-
+setup_logging()
+setup_improvement_logging()
+logger = logging.getLogger()
 logger.info("Alternate Flask RAG application starting up with improved procedural content handling")
 
 app = Flask(__name__)
