@@ -8,14 +8,22 @@
  * Guarantees all [n] citations map to current message sources only.
  */
 window.formatMessage = function formatMessage(text) {
+  // Determine sources for the current message
+  const sources =
+    (window.currentMessageId &&
+      window.messageSourcesMap &&
+      window.messageSourcesMap[window.currentMessageId]) ||
+    window.lastSources;
+
   // Fallback: If no sources, return as-is, process markdown quickly
-  if (!window.lastSources || window.lastSources.length === 0) {
+  if (!sources || sources.length === 0) {
     return text.replace(/\n/g, '<br>');
   }
+
   // [n] style marker rewritten to <sup><a ...> if possible, otherwise left alone
   // Map of display_id to source in current message
   const sourceMap = {};
-  window.lastSources.forEach(src => {
+  sources.forEach(src => {
     sourceMap[String(src.display_id)] = src;
   });
 
@@ -36,7 +44,9 @@ window.streamingEnabled = true;
 let currentStreamingMessage = null;
 
 // Message-scoped citation system
-window.messageSources = {}; // message_id -> sources array
+window.messageSourcesMap = {}; // message_id -> sources array
+// Backwards compatibility alias
+window.messageSources = window.messageSourcesMap;
 window.currentMessageId = null;
 window.messageCounter = 0;
 
@@ -234,8 +244,13 @@ function updateStreamingMessage(content) {
     // Parse raw markdown first for full HTML rendering and then insert citations
     let html = (typeof marked !== 'undefined' ? marked.parse(content) : content);
     // Inject citation links into HTML after markdown parsing
+    const currentSources =
+      (window.currentMessageId &&
+        window.messageSourcesMap &&
+        window.messageSourcesMap[window.currentMessageId]) ||
+      [];
     html = html.replace(/\[(\d+)\]/g, (match, p1) => {
-      const source = window.lastSources && window.lastSources.find(src => String(src.display_id) === p1);
+      const source = currentSources.find(src => String(src.display_id) === p1);
       if (!source) return match;
       const citationId = source.scopedId || `${window.currentMessageId}-${p1}`;
       return `<sup><a href="javascript:void(0);" onclick="handleMessageScopedCitationClick('${citationId}')" class="citation-link" data-citation-id="${citationId}">[${p1}]</a></sup>`;
@@ -268,8 +283,8 @@ function handleStreamingMetadata(metadata) {
     }));
     
     // Store sources for this specific message
-    window.messageSources[window.currentMessageId] = messageScopedSources;
-    
+    window.messageSourcesMap[window.currentMessageId] = messageScopedSources;
+
     // Also update lastSources for backward compatibility
     window.lastSources = messageScopedSources;
     
@@ -284,15 +299,15 @@ function handleStreamingMetadata(metadata) {
         displayId: s.display_id,
         title: s.title.substring(0, 30) + '...'
       })));
-      console.log('📚 All message sources:', Object.keys(window.messageSources).map(msgId => ({
+      console.log('📚 All message sources:', Object.keys(window.messageSourcesMap).map(msgId => ({
         messageId: msgId,
-        sourceCount: window.messageSources[msgId].length,
-        sources: window.messageSources[msgId].map(s => s.scopedId)
+        sourceCount: window.messageSourcesMap[msgId].length,
+        sources: window.messageSourcesMap[msgId].map(s => s.scopedId)
       })));
       console.log('🔗 Source mapping for frontend:', {
         currentMessageId: window.currentMessageId,
-        totalMessages: Object.keys(window.messageSources).length,
-        totalSources: Object.values(window.messageSources).reduce((sum, sources) => sum + sources.length, 0)
+        totalMessages: Object.keys(window.messageSourcesMap).length,
+        totalSources: Object.values(window.messageSourcesMap).reduce((sum, sources) => sum + sources.length, 0)
       });
       console.groupEnd();
     }
@@ -330,8 +345,13 @@ function finalizeStreamingMessage() {
   }
   
   // Add sources if available
-  if (window.lastSources && window.lastSources.length > 0) {
-    addSourcesUtilizedSection();
+  const finalizedSources =
+    (window.messageSourcesMap &&
+      window.currentMessageId &&
+      window.messageSourcesMap[window.currentMessageId]) ||
+    [];
+  if (finalizedSources.length > 0) {
+    addSourcesUtilizedSection(finalizedSources, window.currentMessageId);
   }
   
   // Remove streaming class
@@ -420,7 +440,7 @@ function handleMessageScopedCitationClick(sourceId) {
     }
     
     // First try to find in local message sources cache
-    const messageSources = window.messageSources[messageId] || [];
+    const messageSources = (window.messageSourcesMap && window.messageSourcesMap[messageId]) || [];
     const localSource = messageSources.find(s => 
       s.scopedId === sourceId || s.citation_id == citationId || s.display_id == citationId
     );
@@ -469,26 +489,9 @@ function handleMessageScopedCitationClick(sourceId) {
     return true;
   }
   
-  // Fallback: Try to find in current message sources
-  if (window.lastSources) {
-    const source = window.lastSources.find(s => 
-      s.id === sourceId || s.display_id === sourceId || s.scopedId === sourceId || s.citation_id == sourceId
-    );
-    
-    if (source) {
-      if (window.debugCitations) {
-        console.log('✅ Found source in lastSources:', source.title.substring(0, 50) + '...');
-        console.groupEnd();
-      }
-      
-      showSourcePopup(sourceId, source.title, source.content);
-      return true;
-    }
-  }
-  
   // Final fallback: Search all message sources
-  for (const messageId in window.messageSources) {
-    const sources = window.messageSources[messageId];
+  for (const messageId in window.messageSourcesMap) {
+    const sources = window.messageSourcesMap[messageId];
     const source = sources.find(s => 
       s.id === sourceId || s.display_id === sourceId || s.scopedId === sourceId || s.citation_id == sourceId
     );
@@ -510,9 +513,8 @@ function handleMessageScopedCitationClick(sourceId) {
   if (window.debugCitations) {
     console.error('❌ Source not found anywhere:', sourceId);
     console.log('🔍 Available sources:', {
-      lastSources: window.lastSources?.length || 0,
-      messageSources: Object.keys(window.messageSources).length,
-      allSources: Object.values(window.messageSources).flat().map(s => ({ 
+      messageSources: Object.keys(window.messageSourcesMap).length,
+      allSources: Object.values(window.messageSourcesMap).flat().map(s => ({
         scopedId: s.scopedId, 
         citationId: s.citation_id, 
         displayId: s.display_id 
@@ -532,8 +534,8 @@ function handleMessageScopedCitationClick(sourceId) {
 function showAllConversationSources() {
   const allSources = [];
   
-  for (const messageId in window.messageSources) {
-    const sources = window.messageSources[messageId];
+  for (const messageId in window.messageSourcesMap) {
+    const sources = window.messageSourcesMap[messageId];
     sources.forEach(source => {
       allSources.push({
         ...source,
@@ -568,11 +570,10 @@ function debugCitationState() {
   console.group('🔧 CITATION SYSTEM DEBUG STATE');
   console.log('💬 Message Counter:', window.messageCounter);
   console.log('🎯 Current Message ID:', window.currentMessageId);
-  console.log('📚 Message Sources Count:', Object.keys(window.messageSources).length);
-  console.log('📄 Last Sources Count:', window.lastSources?.length || 0);
+  console.log('📚 Message Sources Count:', Object.keys(window.messageSourcesMap).length);
   
   console.log('📊 Detailed Message Sources:');
-  for (const [msgId, sources] of Object.entries(window.messageSources)) {
+  for (const [msgId, sources] of Object.entries(window.messageSourcesMap)) {
     console.log(`  Message ${msgId}:`, sources.map(s => ({
       scopedId: s.scopedId,
       displayId: s.display_id,
