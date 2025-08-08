@@ -31,12 +31,14 @@ def get_sas_token():
     return os.getenv("SAS_TOKEN")
 
 # Import the simple stateless RAG implementation
-from simple_rag_assistant import SimpleRAGAssistant
+from simple_rag_assistant import SimpleRAGAssistant, RAGAssistant
 from db_manager import DatabaseManager
 from openai import AzureOpenAI
 from config import get_cost_rates
 from openai_service import OpenAIService
 from rag_improvement_logging import setup_improvement_logging
+from cosmos_memory import save_turn, next_order_for
+import uuid
 
 # Set up dedicated logging for the improved implementation
 logger = setup_improvement_logging()
@@ -394,11 +396,16 @@ def api_query_stream():
     logger.debug(f"api_query_stream called with payload: {data}")
     user_query = data.get("query", "")
     is_enhanced = data.get("is_enhanced", False)
-    
-    # Get stateless RAG assistant
-    rag_assistant = get_rag_assistant()
-    
-    # Apply settings if provided
+
+    session_id = request.headers.get("X-Session-Id") or request.cookies.get("session_id")
+    if not session_id:
+        session_id = str(uuid.uuid4())
+
+    order = next_order_for(session_id)
+    save_turn(session_id, "user", user_query, order)
+
+    rag_assistant = RAGAssistant(session_id)
+
     settings = data.get("settings", {})
     if settings:
         for key, value in settings.items():
@@ -406,28 +413,31 @@ def api_query_stream():
                 setattr(rag_assistant, key, value)
     
     def generate():
+        nonlocal session_id
+        full_answer = ""
         try:
             for chunk in rag_assistant.stream_rag_response(user_query):
                 if isinstance(chunk, str):
-                    # Text chunk
+                    full_answer += chunk
                     yield f"data: {json.dumps({'type': 'content', 'data': chunk})}\n\n"
                 elif isinstance(chunk, dict):
-                    # Metadata (sources, evaluation, etc.)
                     yield f"data: {json.dumps({'type': 'metadata', 'data': chunk})}\n\n"
-            
+
+            save_turn(session_id, "assistant", full_answer, next_order_for(session_id))
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
-            
+
         except Exception as e:
             logger.error(f"Streaming error: {e}")
             yield f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n"
-    
+
     return Response(
         generate(),
         mimetype='text/plain',
         headers={
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
-            'X-Accel-Buffering': 'no'  # Disable nginx buffering
+            'X-Accel-Buffering': 'no',  # Disable nginx buffering
+            'X-Session-Id': session_id
         }
     )
 

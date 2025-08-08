@@ -10,6 +10,7 @@ import os
 from typing import List, Dict, Any, Optional
 import re
 from openai_service import OpenAIService
+from cosmos_memory import load_context
 from azure.search.documents import SearchClient
 from azure.search.documents.models import VectorizedQuery
 from azure.core.credentials import AzureKeyCredential
@@ -405,6 +406,61 @@ class SimpleRAGAssistant:
             # Clean citations in accumulated answer
             cleaned_answer = self._clean_citations(full_answer)
             # Yield only the new content
+            new_content = cleaned_answer[last_yielded:]
+            if new_content:
+                yield new_content
+                last_yielded = len(cleaned_answer)
+
+
+class RAGAssistant(SimpleRAGAssistant):
+    """RAG assistant with session-scoped conversational memory."""
+
+    def __init__(self, session_id: str, deployment_name: str = CHAT_DEPLOYMENT):
+        super().__init__(deployment_name=deployment_name)
+        self.session_id = session_id
+
+    def stream_rag_response(self, user_query: str):
+        """Stream response while prepending session history."""
+        history = load_context(self.session_id)
+
+        kb_chunks = self._search_kb(user_query)
+        kb_section = self._compile_kb_context_sections(kb_chunks)
+        sys_prompt = self._select_system_prompt(kb_chunks, user_query)
+
+        context = ""
+        if kb_section:
+            context += f"### Knowledge Base Results:\n{kb_section}\n\n"
+
+        messages = [{"role": "system", "content": sys_prompt}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": context + f"\n\nUser question: {user_query}"})
+
+        citations = []
+        for idx, chunk in enumerate(kb_chunks, 1):
+            title = chunk.get("title") or f"Source {idx}"
+            citations.append(
+                {
+                    "index": idx,
+                    "display_id": str(idx),
+                    "title": title,
+                    "content": chunk.get("chunk", ""),
+                    "parent_id": chunk.get("parent_id", ""),
+                    "id": f"source_{idx}",
+                }
+            )
+
+        yield {"sources": citations}
+
+        full_answer = ""
+        last_yielded = 0
+        for chunk in self.openai_svc.get_chat_response_stream(
+            messages=messages,
+            max_completion_tokens=self.max_completion_tokens,
+            temperature=self.temperature,
+            top_p=self.top_p,
+        ):
+            full_answer += chunk
+            cleaned_answer = self._clean_citations(full_answer)
             new_content = cleaned_answer[last_yielded:]
             if new_content:
                 yield new_content
